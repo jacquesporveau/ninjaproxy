@@ -2,6 +2,10 @@
 
 A transparent privacy proxy for Claude Code. Intercepts API calls, detects and aliases PII in your prompts before they reach Anthropic, then restores the original values in Claude's response — all without changing how you use Claude.
 
+## Definitely NOT READY FOR PRODUCTION.
+
+This is a work in progress ATM
+
 ## How it works
 
 ```
