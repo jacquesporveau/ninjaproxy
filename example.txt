@@ -1,0 +1,9 @@
+@alex: Can Jordan Smith review this before we send it to Acme Roofing?
+Also check https://internal.company.com/spec?v=2&ref=main
+Reach me at alex@example.com or jordan@acme.com
+
+@jordan.smith: Sure, I'll loop in Sarah Chen from Acme Roofing Corp.
+She's at sarah.chen@acme.com — her profile is https://acme.com/team/sarah?dept=eng
+
+FYI Jordan Smith already signed off on the Johnson LLC contract.
+The vendor is Vertex Systems Inc and they want a call with Sarah Chen this week.
