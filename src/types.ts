@@ -11,7 +11,3 @@ export interface AliasEntry {
   type: EntityType;
 }
 
-export interface SanitizeResult {
-  sanitizedText: string;
-  aliasMap: Record<string, AliasEntry>;
-}

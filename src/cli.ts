@@ -1,21 +1,8 @@
 #!/usr/bin/env node
 
-import fs from "fs";
 import { Command } from "commander";
-import {
-  loadAliasMap,
-  sanitizeRawText,
-  saveAliasMap,
-  savePromptText,
-} from "./sanitize";
-import { rehydrateText } from "./rewrite";
-
-const readInput = (filePath: string): string => {
-  if (filePath === "-") {
-    return fs.readFileSync("/dev/stdin", "utf-8");
-  }
-  return fs.readFileSync(filePath, "utf-8");
-};
+import { startDaemon, stopDaemon, getDaemonStatus } from "./daemon";
+import { installProxy, uninstallProxy } from "./installer";
 
 const die = (err: unknown): never => {
   console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
@@ -26,61 +13,71 @@ const program = new Command();
 
 program
   .name("ninjaproxy")
-  .description("Sanitize text into stable aliases for safe Claude prompting")
+  .description("Privacy-first proxy that scrubs PII from prompts before they reach Claude")
   .version("0.1.0");
 
 program
-  .command("sanitize")
-  .description("Detect entities and replace with aliases")
-  .argument("<file>", "Path to input text file (or - for stdin)")
-  .action((file: string) => {
+  .command("install")
+  .description("Build, start the daemon, and configure Claude Code to route through ninjaproxy")
+  .option("-p, --port <number>", "Port for the proxy to listen on", "3456")
+  .option("-u, --upstream <host>", "Upstream API host to forward requests to", "api.anthropic.com")
+  .action((opts) => {
     try {
-      const text = readInput(file);
-      const result = sanitizeRawText(text);
-      saveAliasMap(result.aliasMap);
-
-      console.log(result.sanitizedText);
+      const port = parseInt(opts.port, 10);
+      installProxy(port);
+      startDaemon(port, opts.upstream);
     } catch (err) {
       die(err);
     }
   });
 
 program
-  .command("prompt")
-  .description("Output a Claude-ready sanitized prompt")
-  .argument("<file>", "Path to input text file (or - for stdin)")
-  .action((file: string) => {
+  .command("uninstall")
+  .description("Stop the daemon and remove ninjaproxy from Claude Code settings")
+  .action(() => {
     try {
-      const text = readInput(file);
-      const result = sanitizeRawText(text);
-      saveAliasMap(result.aliasMap);
-
-      const prompt = [
-        "You are analyzing an internal discussion.",
-        "All entities have been pseudonymized intentionally.",
-        "",
-        result.sanitizedText,
-      ].join("\n");
-
-      const promptPath = savePromptText(prompt);
-
-      console.log(prompt);
-      console.error(`\n[Saved to: ${promptPath}]`);
+      stopDaemon();
+      uninstallProxy();
     } catch (err) {
       die(err);
     }
   });
 
 program
-  .command("rehydrate")
-  .description("Restore original values using the saved alias map")
-  .argument("<file>", "Path to file containing aliased text (or - for stdin)")
-  .action((file: string) => {
+  .command("start")
+  .description("Start the ninjaproxy daemon")
+  .option("-p, --port <number>", "Port for the proxy to listen on", "3456")
+  .option("-u, --upstream <host>", "Upstream API host to forward requests to", "api.anthropic.com")
+  .action((opts) => {
     try {
-      const aliasMap = loadAliasMap();
-      const text = readInput(file);
-      const restored = rehydrateText(text, aliasMap);
-      console.log(restored);
+      startDaemon(parseInt(opts.port, 10), opts.upstream);
+    } catch (err) {
+      die(err);
+    }
+  });
+
+program
+  .command("stop")
+  .description("Stop the ninjaproxy daemon")
+  .action(() => {
+    try {
+      stopDaemon();
+    } catch (err) {
+      die(err);
+    }
+  });
+
+program
+  .command("status")
+  .description("Show whether ninjaproxy is running")
+  .action(() => {
+    try {
+      const { running, pid } = getDaemonStatus();
+      if (running) {
+        console.log(`running (pid: ${pid})`);
+      } else {
+        console.log("stopped");
+      }
     } catch (err) {
       die(err);
     }

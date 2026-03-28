@@ -1,67 +1,55 @@
 # ninjaproxy
 
-A CLI tool that detects PII and sensitive entities in text, replaces them with stable aliases, and outputs Claude-ready prompts. Built as a stepping stone toward a Claude Code hook that sanitizes prompts in-flight.
+A transparent privacy proxy for Claude Code. Intercepts API calls, detects and aliases PII in your prompts before they reach Anthropic, then restores the original values in Claude's response — all without changing how you use Claude.
 
 ## How it works
 
-1. **Sanitize** — detect entities (emails, URLs, mentions, names, orgs) and replace them with stable aliases (`PERSON_1`, `EMAIL_2`, etc.)
-2. **Send** — paste the sanitized output into Claude
-3. **Rehydrate** — restore original values from Claude's response
+```
+Claude Code → ninjaproxy (localhost:3456) → api.anthropic.com
+```
 
-The alias map is persisted to `.ninjaproxy/alias-map.json` between steps 1 and 3.
+1. **Intercept** — ninjaproxy sits between Claude Code and the Anthropic API via `ANTHROPIC_BASE_URL`
+2. **Sanitize** — names, emails, URLs, mentions, and org names in your latest message are replaced with stable aliases (`PERSON_1`, `EMAIL_1`, etc.) before the request is forwarded
+3. **Rehydrate** — aliases in Claude's response are swapped back to the originals before Claude Code receives them
+
+The round-trip is fully transparent. You type normally, Claude responds normally, and PII never leaves your machine in plaintext.
 
 ## Install
 
 ```bash
 yarn install
+yarn build
+node dist/cli.js install
 ```
 
-## Usage
+`install` does two things:
+1. Starts the ninjaproxy daemon via launchd (auto-restarts on crash, starts on login)
+2. Sets `ANTHROPIC_BASE_URL=http://127.0.0.1:3456` in `~/.claude/settings.json`
 
-### `sanitize`
-
-Detect and replace entities in a file. Prints sanitized text to stdout, saves alias map silently.
+## CLI
 
 ```bash
-yarn sanitize <file>
-yarn sanitize -        # stdin
-pbpaste | yarn sanitize -
+ninjaproxy install     # build, start daemon, configure Claude Code
+ninjaproxy uninstall   # stop daemon, remove from Claude Code settings
+ninjaproxy start       # start the daemon
+ninjaproxy stop        # stop the daemon
+ninjaproxy status      # show running state and PID
 ```
 
-### `prompt`
-
-Same as sanitize but wraps the output in a Claude-ready system prompt.
+## Verify it's working
 
 ```bash
-yarn prompt <file>
-yarn prompt -          # stdin
-pbpaste | yarn prompt -
+# Health check
+curl http://127.0.0.1:3456/health
+
+# Live logs — shows what gets sanitized per request
+tail -f ~/.ninjaproxy/proxy.log
 ```
 
-### `rehydrate`
+Each request logs the alias map when PII is detected:
 
-Restore aliases in a response using the saved alias map.
-
-```bash
-yarn rehydrate <file>
-yarn rehydrate -       # stdin
-pbpaste | yarn rehydrate -
 ```
-
-## Demo
-
-```bash
-bash demo.sh
-```
-
-## Real-world workflow
-
-```bash
-# Copy a Slack thread, sanitize it, and send to Claude
-pbpaste | yarn prompt - | pbcopy
-
-# Paste Claude's response, rehydrate it back
-pbpaste | yarn rehydrate -
+[sanitize] PERSON_1=Dennis Marchand, EMAIL_1=dennis@gmail.com
 ```
 
 ## Entity types
@@ -74,26 +62,40 @@ pbpaste | yarn rehydrate -
 | `ORG_n` | Company names (Inc, LLC, Corp, etc.) |
 | `PERSON_n` | Title Case two-word names |
 
-> Detection is intentionally naive regex-based. A third-party PII detector will replace `src/detect.ts` in a future iteration.
+Detection runs only on the latest user message per request. Previous turns in the conversation are not re-scanned.
+
+## Limitations
+
+**Name detection is broad.** The `PERSON` regex matches any Title Case two-word phrase. In conversations that include code, markdown, or structured content, you'll see false positives — section headers, library names, and similar patterns can all fire. Emails and URLs are matched precisely; names are not.
+
+**Only your typed messages are protected.** ninjaproxy sanitizes what you type, not the full context Claude Code sends. Tool results, file contents, and system prompt injections pass through unmodified. If a file you read into the conversation contains a name or email, Anthropic will see it.
+
+**No cross-session memory.** Aliases are assigned fresh each request. A name aliased in a previous Claude Code session won't carry over.
+
+> Detection is intentionally regex-based. A third-party PII detector will replace `src/detect.ts` in a future iteration.
 
 ## Project structure
 
 ```
 src/
   types.ts      — shared types
-  detect.ts     — entity detection (swap this out for a real PII detector)
-  alias.ts      — alias assignment
+  detect.ts     — entity detection (regex, span-blocking)
+  alias.ts      — alias assignment (stable, per-request counters)
   rewrite.ts    — text replacement and rehydration
-  sanitize.ts   — orchestration + file I/O
+  proxy.ts      — HTTP proxy server (port 3456)
+  daemon.ts     — launchd daemon manager
+  installer.ts  — patches ~/.claude/settings.json
   cli.ts        — CLI entry point
-.ninjaproxy/
-  alias-map.json  — persisted alias map (gitignored)
-  prompt.txt      — last prompt output (gitignored)
+~/.ninjaproxy/
+  proxy.log     — daemon stdout/stderr
+~/Library/LaunchAgents/
+  com.ninjaproxy.daemon.plist
 ```
 
-## Build
+## Uninstall
 
 ```bash
-yarn build        # compile to dist/
-node dist/cli.js sanitize example.txt
+node dist/cli.js uninstall
 ```
+
+Stops the daemon, removes the plist, and restores the original `ANTHROPIC_BASE_URL` in `~/.claude/settings.json` (or removes it if there was none).

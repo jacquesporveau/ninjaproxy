@@ -8,10 +8,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "dev": "ts-node src/cli.ts",
-    "sanitize": "ts-node src/cli.ts sanitize",
-    "prompt": "ts-node src/cli.ts prompt",
-    "rehydrate": "ts-node src/cli.ts rehydrate"
+    "dev": "ts-node src/cli.ts"
   },
   "dependencies": {
     "commander": "^12.1.0"
